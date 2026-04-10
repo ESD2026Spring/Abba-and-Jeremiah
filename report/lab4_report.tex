@@ -243,11 +243,21 @@ confirming the RTOS heartbeat.
 
 \begin{figure}[H]
   \centering
-  \fbox{\begin{minipage}{0.75\textwidth}\centering\vspace{3.2cm}
-    {\color{cmuGray}\itshape
-      [Insert photo: working system — LCD showing ``Enter: 90\_ '' / ``Set: 90 deg'',
-       servo positioned at 90°, keypad and Nucleo board visible]}
-  \vspace{3.2cm}\end{minipage}}
+  % Automatically loads "result.png" or "result.jpg" if uploaded to Overleaf,
+  % otherwise falls back to the placeholder box.
+  \IfFileExists{result.png}{
+    \includegraphics[width=0.85\textwidth]{result.png}
+  }{
+    \IfFileExists{result.jpg}{
+      \includegraphics[width=0.85\textwidth]{result.jpg}
+    }{
+      \fbox{\begin{minipage}{0.85\textwidth}\centering\vspace{3.2cm}
+        {\color{cmuGray}\itshape
+          [Insert photo: Upload ``result.png'' or ``result.jpg'' to Overleaf\\
+           It should show the live LCD feedback, servo, and keypad]}
+      \vspace{3.2cm}\end{minipage}}
+    }
+  }
   \caption{Working system: live LCD feedback and SG90 servo responding to keypad input.}
 \end{figure}
 
