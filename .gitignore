@@ -1,0 +1,31 @@
+# ── STM32CubeIDE Build Artifacts ─────────────────────────────
+Debug/
+Release/
+*.o
+*.d
+*.su
+*.elf
+*.bin
+*.hex
+*.map
+*.lst
+
+# ── IDE Metadata ──────────────────────────────────────────────
+.settings/
+.cproject
+.project
+
+# ── LaTeX Compilation Artifacts ──────────────────────────────
+report/*.pdf
+report/*.aux
+report/*.log
+report/*.out
+report/*.toc
+report/*.fls
+report/*.fdb_latexmk
+report/*.synctex.gz
+
+# ── OS Files ──────────────────────────────────────────────────
+Thumbs.db
+.DS_Store
+desktop.ini

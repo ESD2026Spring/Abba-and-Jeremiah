@@ -1,0 +1,360 @@
+%% ============================================================
+%%  Lab 4 Report – Motor Control using RTOS
+%%  Embedded Systems Development  04-633 A
+%%  Carnegie Mellon University Africa  –  April 2026
+%% ============================================================
+\documentclass[11pt, a4paper]{article}
+
+% ── Packages ─────────────────────────────────────────────────
+\usepackage[top=2.5cm, bottom=2.5cm, left=2.8cm, right=2.8cm]{geometry}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{parskip}
+\usepackage{caption}
+\usepackage{fancyhdr}
+\usepackage{microtype}
+\usepackage{float}
+\usepackage{amsmath}
+\usepackage{setspace}
+
+% ── Colours ──────────────────────────────────────────────────
+\definecolor{cmuRed}{RGB}{196, 18, 48}
+\definecolor{cmuGray}{RGB}{90, 90, 90}
+
+% ── Hyperref ─────────────────────────────────────────────────
+\hypersetup{colorlinks=true, linkcolor=black, urlcolor=cmuRed, citecolor=black}
+
+% ── Section formatting – clean, no red rule ──────────────────
+\titleformat{\section}{\large\bfseries}{}{0em}{}
+\titleformat{\subsection}{\normalsize\bfseries\itshape}{}{0em}{}
+\titlespacing{\section}{0pt}{10pt}{4pt}
+\titlespacing{\subsection}{0pt}{7pt}{2pt}
+
+% ── Header / Footer ──────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\lhead{\small\color{cmuGray} 04-633 A \ Embedded Systems Development}
+\rhead{\small\color{cmuGray} Lab 4: Motor Control using RTOS}
+\cfoot{\small\thepage}
+
+% ── Table column types ───────────────────────────────────────
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+%% ============================================================
+\begin{document}
+\pagenumbering{gobble}
+
+%% ── COVER PAGE ──────────────────────────────────────────────
+\begin{titlepage}
+  \centering
+
+  \vspace*{0.6cm}
+  \includegraphics[width=3.8cm]{logo.png}\\[0.9cm]
+
+  {\fontsize{21}{25}\selectfont\bfseries\color{cmuRed}
+    Carnegie Mellon University Africa}\\[0.3cm]
+  {\large\itshape Embedded Systems Development}\\[0.1cm]
+  {\normalsize 04-633 A}\\[2.0cm]
+
+  {\Large\bfseries Lab 4: Motor Control using RTOS}\\[0.35cm]
+  {\normalsize\color{cmuRed} FreeRTOS, Hardware PWM \& Servo Control on STM32}\\[2.4cm]
+
+  \begin{tabular}{rl}
+    \textbf{Name:}      & Abba Uba Said \\[0.25em]
+    \textbf{Andrew ID:} & \href{mailto:asaiduba@andrew.cmu.edu}{asaiduba@andrew.cmu.edu} \\[0.5em]
+    \textbf{Partner:}   & Jeremiah Dosu \\[0.25em]
+    \textbf{Andrew ID:} & \href{mailto:jdosu@andrew.cmu.edu}{jdosu@andrew.cmu.edu} \\
+  \end{tabular}
+
+  \vfill
+
+  \begin{tabular}{rl}
+    \textbf{Course Instructor:}  & Emmanuel Ndashimye \\[0.2em]
+    \textbf{Teaching Assistant:} & Millicent Malinga \\[0.2em]
+    \textbf{Due Date:}           & April 10, 2026 \\[0.2em]
+    \textbf{Demo Date:}          & April 13, 2026 \\
+  \end{tabular}
+
+  \vspace{1.4cm}
+\end{titlepage}
+
+%% ── Content pages ───────────────────────────────────────────
+\pagenumbering{arabic}
+\setcounter{page}{1}
+\setlength{\parskip}{4pt}
+
+%% ============================================================
+\section{Overview of the Implementation}
+%% ============================================================
+
+This project implements a real-time servo motor controller on the STM32 Nucleo-F103RB
+using FreeRTOS for concurrent task management and hardware PWM via TIM2 for precise
+motor control. Users enter a desired servo angle (0--180°) on a 4×4 matrix keypad; live
+feedback appears on a 16×2 I\textsuperscript{2}C LCD; and the SG90 servo moves to the
+specified position — all running as independent, synchronised RTOS tasks.
+
+\subsection{FreeRTOS Task Design}
+
+\begin{table}[H]
+\centering\small
+\caption{FreeRTOS Task Summary}
+\begin{tabular}{L{2.6cm} C{2.2cm} C{1.8cm} L{6.0cm}}
+\toprule
+\textbf{Task} & \textbf{Priority} & \textbf{Stack} & \textbf{Responsibility} \\
+\midrule
+\texttt{KeypadTask}  & Normal       & 256 words & Scans keypad; buffers digits; sends angle on \texttt{\#}; backspace on \texttt{*} \\
+\texttt{ServoTask}   & AboveNormal  & 256 words & Reads confirmed angle; updates TIM2 compare register (50\,Hz PWM) \\
+\texttt{LCDTask}     & Normal       & 256 words & Row\,0: live typing with blinking cursor; Row\,1: confirmed angle \\
+\texttt{defaultTask} & Low          & 128 words & Toggles Nucleo LD2 (PA5) every 3\,s — RTOS heartbeat \\
+\midrule
+\multicolumn{4}{l}{\small Shared state: \texttt{targetAngle} and \texttt{inputDisplay[5]} — both protected by \texttt{angleMutex}.}\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Hardware Configuration}
+
+The system clock runs at \textbf{72\,MHz} (HSE 8\,MHz $\times$ PLL\,$\times$9).
+TIM4 serves as the HAL timebase (separate from the RTOS SysTick), while TIM2 Channel\,1
+generates the servo PWM on PA0. I\textsuperscript{2}C1 is remapped to PB8/PB9 for the LCD.
+
+\begin{table}[H]
+\centering\small
+\caption{Pin Assignment}
+\begin{tabular}{C{1.6cm} C{2.8cm} L{8.0cm}}
+\toprule
+\textbf{Pin(s)} & \textbf{Function} & \textbf{Purpose} \\
+\midrule
+PA0      & TIM2\_CH1 PWM   & SG90 signal — 50\,Hz, 500–2500\,µs pulse \\
+PA5      & GPIO Output     & Nucleo LD2 heartbeat LED (3\,s toggle) \\
+PB0--PB3 & GPIO Output     & Keypad rows (driven LOW one at a time to scan) \\
+PB4--PB7 & GPIO Input PU   & Keypad columns (read LOW when key pressed) \\
+PB8/PB9  & I\textsuperscript{2}C1 SCL/SDA & LCD (HD44780 + PCF8574 backpack, addr 0x27) \\
+PD0/PD1  & RCC OSC IN/OUT  & 8\,MHz HSE external crystal \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Servo PWM Calculation}
+
+The SG90 requires a 50\,Hz (20\,ms) PWM signal. With the 72\,MHz APB1 timer clock:
+\[
+  f_\text{timer} = \frac{72{,}000{,}000}{72} = 1\,\text{MHz}\,(1\,\mu\text{s/tick}),
+  \qquad
+  T_\text{PWM} = 20{,}000 \times 1\,\mu\text{s} = 20\,\text{ms} = 50\,\text{Hz}
+\]
+\[
+  \text{Pulse}(\theta) = 500 + \frac{\theta \times 2000}{180}\;\text{ticks},
+  \quad \theta \in [0°,\;180°]
+\]
+
+%% ============================================================
+\section{How FreeRTOS and Timer Interrupts Were Used}
+%% ============================================================
+
+\subsection{Task Scheduling and Synchronisation}
+
+FreeRTOS is configured with a 1\,kHz tick rate (\texttt{configTICK\_RATE\_HZ = 1000}),
+8\,KB heap, and preemptive scheduling. \texttt{ServoTask} holds the highest priority,
+guaranteeing prompt PWM updates whenever a new angle is confirmed.
+All tasks use \texttt{osDelay()} rather than busy-waiting, yielding the CPU between
+iterations: \texttt{KeypadTask} polls every 10\,ms, \texttt{LCDTask} refreshes every 150\,ms,
+and \texttt{ServoTask} updates at 20\,ms intervals.
+
+A single mutex (\texttt{angleMutex}) protects both shared variables.
+Every task follows the same pattern — acquire mutex, read/write, release immediately —
+minimising lock contention and avoiding priority inversion.
+
+\subsection{Hardware Timer Interrupts}
+
+\textbf{TIM4} generates 1\,ms HAL timebase interrupts independently of the RTOS SysTick,
+a mandatory separation on STM32 when running FreeRTOS alongside the HAL.
+
+\textbf{TIM2} operates in hardware PWM mode (TIM\_OCMODE\_PWM1) on Channel\,1 (PA0).
+Once started with \texttt{HAL\_TIM\_PWM\_Start()}, the timer peripheral autonomously
+maintains the 50\,Hz waveform without software intervention.
+\texttt{ServoTask} only calls \texttt{\_\_HAL\_TIM\_SET\_COMPARE()} to change the pulse
+width, keeping CPU overhead minimal.
+
+%% ============================================================
+\section{Challenges, Solutions, and Key Lessons Learned}
+%% ============================================================
+
+\subsection{Challenge 1 — Servo Vibrating: Wrong PWM Frequency}
+
+The servo vibrated continuously instead of moving to a set position.
+A logic analyser revealed the PWM frequency was \textbf{5\,000\,Hz} — 100× too high.
+The CubeMX configuration had \texttt{Prescaler = 719}, \texttt{Period = 19}, producing
+a 100\,kHz timer clock and a 0.2\,ms period. The SG90 interprets out-of-range frequencies
+as invalid commands, causing uncontrolled coil energisation.
+
+\textit{Solution:} Recalculated from first principles to \texttt{Prescaler = 71},
+\texttt{Period = 19999} (1\,MHz tick, 20\,ms period). The servo settled correctly on the
+first test after this change.
+
+\subsection{Challenge 2 — Blank LCD: I\textsuperscript{2}C Misconfiguration}
+
+We spent the entire morning in the lab with a completely blank display.
+CubeMX had remapped I\textsuperscript{2}C1 to the alternate pins (PB8/PB9)
+and enabled \texttt{\_\_HAL\_AFIO\_REMAP\_I2C1\_ENABLE()}, but the physical wires
+remained on the default pins (PB6/PB7). Additionally, \texttt{HAL\_MspInit()} called
+\texttt{\_\_HAL\_AFIO\_REMAP\_SWJ\_DISABLE()}, which silently killed both JTAG and SWD,
+locking out the ST-Link debugger and making every reflash require manual bootloader entry.
+
+\textit{Solution:} Moved SDA/SCL wires to \textbf{PB9/PB8}; changed
+\texttt{SWJ\_DISABLE} to \texttt{SWJ\_NOJTAG} to restore ST-Link while freeing PB3/PB4
+for keypad use; verified the PCF8574 I\textsuperscript{2}C address (0x27) with a scanner.
+The LCD initialised immediately on the next boot.
+
+\subsection{Challenge 3 — Keypad Row 4 Dead: JTAG Pin Conflict}
+
+After fixing the LCD, the entire bottom row (\texttt{*}, \texttt{0}, \texttt{\#}, \texttt{D})
+was unresponsive. Row\,4 is driven by PB3 (JTAG TDI pin). The AFIO remap had not taken
+effect before GPIO initialisation because \texttt{SWJ\_DISABLE} was overriding it.
+
+\textit{Solution:} \texttt{SWJ\_NOJTAG} — called inside \texttt{HAL\_MspInit()},
+which executes before \texttt{MX\_GPIO\_Init()} — releases PB3 and PB4 to the GPIO
+peripheral. All 16 keys subsequently responded correctly.
+
+\subsection{Challenge 4 — Empty Task Bodies: No System Output}
+
+The CubeMX-generated skeleton contained only \texttt{osDelay(1)} placeholders.
+After flashing, nothing worked: no LED blink, no LCD output, servo stationary.
+Additionally, \texttt{servo.c} was missing entirely — declared in \texttt{servo.h}
+but never created — causing a linker error on the first build.
+
+\textit{Solution:} All three application tasks were fully implemented, and \texttt{servo.c}
+was written from scratch with \texttt{Servo\_Init()} and \texttt{Servo\_SetAngle()}.
+
+\subsection{Results}
+
+After resolving all four challenges, the system operated as expected.
+Typing digits on the keypad displayed them in real time on LCD row\,0 with a blinking
+cursor; pressing \texttt{\#} committed the angle to \texttt{ServoTask} via the mutex,
+moved the servo smoothly, and updated LCD row\,1. The LD2 LED blinked every 3\,s
+confirming the RTOS heartbeat.
+
+\begin{figure}[H]
+  \centering
+  \fbox{\begin{minipage}{0.75\textwidth}\centering\vspace{3.2cm}
+    {\color{cmuGray}\itshape
+      [Insert photo: working system — LCD showing ``Enter: 90\_ '' / ``Set: 90 deg'',
+       servo positioned at 90°, keypad and Nucleo board visible]}
+  \vspace{3.2cm}\end{minipage}}
+  \caption{Working system: live LCD feedback and SG90 servo responding to keypad input.}
+\end{figure}
+
+\subsection{Key Lessons Learned}
+
+\begin{enumerate}[noitemsep, topsep=2pt]
+  \item \textbf{Verify timer arithmetic independently.} Never rely on auto-generated
+        prescaler values without confirming $f_\text{tick}$ and $T_\text{period}$ on paper.
+  \item \textbf{Pin remapping must match physical wiring.} A mismatch between CubeMX
+        alternate-function remapping and the actual wire connections produces silent failures.
+  \item \textbf{Preserve SWD during development.} \texttt{SWJ\_DISABLE} eliminates the
+        only practical reflash path on Nucleo boards and must never be used while debugging.
+  \item \textbf{Incremental integration.} Testing each peripheral in isolation before
+        combining all tasks would have caught the empty-body and missing-file issues earlier.
+  \item \textbf{Mutex discipline.} Acquiring, accessing, and releasing the mutex as quickly
+        as possible in every task prevents deadlocks and keeps real-time response predictable.
+\end{enumerate}
+
+%% ============================================================
+\section{Team Collaboration}
+%% ============================================================
+
+This lab was completed in partnership with my teammate, \textbf{Jeremiah}, in accordance
+with the course collaboration policy. I focused primarily on the FreeRTOS task architecture,
+the servo driver (\texttt{servo.c}), and the TIM2 PWM configuration, while Jeremiah handled
+the keypad scanning logic and the LCD driver integration. That said, every major design
+decision, pin assignment, and timer calculation was discussed and validated by both of us
+before any code was committed to the shared repository.
+
+\subsection{In-Lab Debugging Session}
+
+Jeremiah and I arrived at the lab early in the morning with what I thought was a solid,
+nearly-complete implementation. We had discussed the design the night before and I was
+confident it would work on the first flash. It did not.
+
+\textbf{The servo was vibrating the moment we powered up.}
+Before Jeremiah and I even tried the LCD or keypad, the motor was buzzing continuously
+and shaking at every angle I commanded. My first instinct was a wiring problem, so we
+spent time tracing every connection on the breadboard --- everything looked correct.
+I then connected a logic analyser to PA0 and measured the PWM frequency: it was
+\textbf{5\,000\,Hz}, not 50\,Hz --- a factor of 100 off. I traced the error to the timer
+values I had written in CubeMX: \texttt{Prescaler = 720 - 1} and \texttt{Period = 20 - 1}
+produced a 100\,kHz timer clock with a 0.2\,ms period. I recalculated from the SG90
+datasheet on paper, corrected to \texttt{Prescaler = 72 - 1} and \texttt{Period = 20000 - 1},
+reflashed the board, and the servo moved cleanly to the target position for the first time.
+
+\textbf{The LCD stayed completely blank for hours.}
+With the servo working, Jeremiah and I turned to the display. No matter what we tried,
+it showed nothing --- not even garbage characters. Jeremiah verified the
+I\textsuperscript{2}C address with a scanner sketch (confirmed 0x27), we inspected the
+PCF8574 solder jumpers, and I cross-checked the \texttt{LCD\_Init()} sequence against the
+HD44780 datasheet line by line. Still nothing. The breakthrough came when I opened the
+STM32CubeIDE pin view and noticed that I\textsuperscript{2}C1 was remapped to PB8 and
+PB9 in the configuration --- but our physical wires were connected to PB6 and PB7, the
+non-remapped default pins. I moved the SDA wire to PB9 and the SCL wire to PB8 on the
+Nucleo header. The LCD displayed ``\texttt{Servo Control}'' on the very next power cycle.
+That moment was a genuine relief after hours of confusion.
+
+\textbf{Losing the ST-Link connection mid-session.}
+At one point during the day, a reflash attempt failed and the board completely vanished
+from STM32CubeIDE. Jeremiah and I tried different cables and ports. I eventually realised
+that \texttt{\_\_HAL\_AFIO\_REMAP\_SWJ\_DISABLE()} in \texttt{HAL\_MspInit()} had
+silently disabled both JTAG and SWD after the first successful flash. To recover, I held
+the BOOT0 pin HIGH while powering on to enter bootloader mode and reflash the firmware.
+I immediately changed the call to \texttt{SWJ\_NOJTAG}, which preserves the SWD
+interface (used by ST-Link) while freeing the JTAG-only pins (PB3, PB4) for the keypad.
+
+\textbf{Working through it together.}
+Throughout the day, Jeremiah kept me grounded when I got tunnel-vision on a single
+hypothesis, and I helped him debug the keypad row~4 issue when he ran into the JTAG
+pin conflict. We used a shared GitHub Classroom repository with feature branches ---
+I maintained \texttt{feature/servo-pwm} and Jeremiah worked on \texttt{feature/lcd-keypad}
+--- merging to \texttt{main} only after hardware tests confirmed each feature was stable.
+Despite the long and at times frustrating day, working through every bug with Jeremiah
+gave me a much deeper understanding of STM32 peripheral configuration and FreeRTOS
+integration than any lecture alone could have provided.
+
+%% ============================================================
+\section*{Conclusion}
+%% ============================================================
+
+This lab provided practical experience with FreeRTOS task scheduling, hardware PWM
+generation, I\textsuperscript{2}C communication, and GPIO matrix scanning on the STM32
+platform. The debugging process reinforced that systematic hardware verification —
+clock trees, pin remapping, and signal measurement — combined with incremental software
+integration are essential disciplines for reliable embedded systems development.
+The final system meets all lab requirements: concurrent RTOS tasks, hardware PWM servo
+control, live LCD feedback, a mutex-protected shared state, and a visible RTOS heartbeat.
+
+%% ============================================================
+\section*{References}
+%% ============================================================
+
+\begin{enumerate}[noitemsep, topsep=2pt, label={[\arabic*]}]
+  \item STMicroelectronics, \textit{STM32F103xB Datasheet}, Rev.\,17, 2022.
+        \url{https://www.st.com/resource/en/datasheet/stm32f103rb.pdf}
+  \item STMicroelectronics, \textit{STM32CubeIDE User Guide (UM2553)}, 2023.
+        \url{https://www.st.com/resource/en/user_manual/um2553-stm32cubeide-user-guide-stmicroelectronics.pdf}
+  \item Carnegie Mellon University Africa, \textit{04-633 A Reference Manual}, Canvas, 2026.
+  \item STMicroelectronics, \textit{Nucleo-64 User Manual (UM1724)}, Rev.\,14, 2023.
+        \url{https://www.st.com/resource/en/user_manual/um1724-stm32-nucleo64-boards-mb1136-stmicroelectronics.pdf}
+  \item Hitachi, \textit{HD44780U LCD Controller Datasheet}, 1998.
+        \url{https://www.sparkfun.com/datasheets/LCD/HD44780.pdf}
+  \item NXP Semiconductors, \textit{PCF8574 Remote 8-Bit I/O Expander Datasheet}, Rev.\,5, 2021.
+        \url{https://www.nxp.com/docs/en/data-sheet/PCF8574_PCF8574A.pdf}
+  \item Tower Pro, \textit{SG90 Micro Servo Motor Datasheet}.
+        \url{http://www.towerpro.com.tw/product/sg90-7/}
+\end{enumerate}
+
+\end{document}
