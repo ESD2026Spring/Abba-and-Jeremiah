@@ -275,58 +275,5 @@ Default address is `0x27`. If LCD is blank after correct wiring, try `0x3F` in `
 #define LCD_I2C_ADDR  (0x3F << 1)  // some modules ship with A0-A2 = HIGH
 ```
 
----
-
-## Submission
-
-This project follows the **Lab 4 Submission Guidelines** from the 04-633 A course handout.
-
----
-
-### 8.1 Complete Source Code — GitHub Submission
-
-- [x] All relevant project files committed, including driver files (`keypad.c`, `lcd_i2c.c`, `servo.c`) and `main.c`
-- [x] `README.md` included with project description, wiring guide, and implementation notes
-- [ ] **Create a GitHub issue titled `Lab4-Submission`** containing:
-  - **Name:** Abba Uba Said &nbsp;|&nbsp; **Partner:** Jeremiah Dosu
-  - **Andrew IDs:** `asaiduba@andrew.cmu.edu` · `jdosu@andrew.cmu.edu`
-  - **Commit hash** used for grading
-  - **Link** to individual Canvas report
-
-> 📋 **Copy this into the GitHub issue body:**
-> ```
-> Title: Lab4-Submission
->
-> Name:         Abba Uba Said
-> Partner:      Jeremiah Dosu
-> Andrew IDs:   asaiduba@andrew.cmu.edu, jdosu@andrew.cmu.edu
-> Commit Hash:  <paste your final commit hash here>
-> Report Link:  <paste your Canvas submission URL here>
-> ```
-
----
-
-### 8.2 Project Report — Individual Canvas Submission
-
-Each student submits a **separate** individual report (max 3 pages) on Canvas, covering:
-
-- Overview of the implementation
-- How FreeRTOS and timer interrupts were used
-- Challenges Faced, Solutions Implemented, and Key Lessons Learned
-
-> The report source is at `report/lab4_report.tex`.  
-> Compile it on [Overleaf](https://www.overleaf.com) (upload `lab4_report.tex` + `logo.png`), then download the PDF and submit to Canvas.
-
----
-
-### 8.3 Demonstration — In-Lab Presentation (April 13, 2026)
-
-Present the working project to the TA, demonstrating:
-
-1. The complete working system running live on the Nucleo board
-2. How FreeRTOS tasks were implemented and interact with each other
-3. Proper PWM servo control using hardware timer interrupts (show servo responding to keypad input)
-
----
 
 *Carnegie Mellon University Africa · Embedded Systems Development 04-633 A · 2026*
